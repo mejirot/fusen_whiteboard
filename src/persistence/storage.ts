@@ -3,10 +3,15 @@ import {
   NOTE_COLORS,
   STORAGE_KEY,
   type BoardDocument,
+  type BoardNode,
+  type ImageNode,
   type LabeledEdge,
   type NoteColorId,
   type StickyNode,
+  isImageNode,
+  isStickyNode,
 } from '../types'
+import { collectAssets, hydrateAssets } from './imageDb'
 
 const colorIds = new Set<string>(NOTE_COLORS.map((c) => c.id))
 
@@ -14,20 +19,126 @@ function isNoteColor(value: unknown): value is NoteColorId {
   return typeof value === 'string' && colorIds.has(value)
 }
 
+function parseNotes(raw: unknown): BoardDocument['notes'] | null {
+  if (!Array.isArray(raw)) return null
+  const notes: BoardDocument['notes'] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return null
+    const n = item as Record<string, unknown>
+    if (typeof n.id !== 'string') return null
+    if (typeof n.x !== 'number' || typeof n.y !== 'number') return null
+    if (typeof n.text !== 'string') return null
+    notes.push({
+      id: n.id,
+      x: n.x,
+      y: n.y,
+      text: n.text,
+      color: isNoteColor(n.color) ? n.color : 'yellow',
+    })
+  }
+  return notes
+}
+
+function parseImages(raw: unknown): BoardDocument['images'] | null {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) return null
+  const images: BoardDocument['images'] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return null
+    const img = item as Record<string, unknown>
+    if (typeof img.id !== 'string') return null
+    if (typeof img.x !== 'number' || typeof img.y !== 'number') return null
+    if (typeof img.width !== 'number' || typeof img.height !== 'number') {
+      return null
+    }
+    if (typeof img.imageId !== 'string') return null
+    if (typeof img.caption !== 'string') return null
+    images.push({
+      id: img.id,
+      x: img.x,
+      y: img.y,
+      width: img.width,
+      height: img.height,
+      imageId: img.imageId,
+      caption: img.caption,
+    })
+  }
+  return images
+}
+
+function parseEdges(raw: unknown): BoardDocument['edges'] | null {
+  if (!Array.isArray(raw)) return null
+  const edges: BoardDocument['edges'] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return null
+    const e = item as Record<string, unknown>
+    if (typeof e.id !== 'string') return null
+    if (typeof e.source !== 'string' || typeof e.target !== 'string') return null
+    edges.push({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: typeof e.sourceHandle === 'string' ? e.sourceHandle : null,
+      targetHandle: typeof e.targetHandle === 'string' ? e.targetHandle : null,
+      label: typeof e.label === 'string' ? e.label : '',
+    })
+  }
+  return edges
+}
+
+function parseViewport(raw: unknown): BoardDocument['viewport'] {
+  if (!raw || typeof raw !== 'object') return DEFAULT_VIEWPORT
+  const v = raw as Record<string, unknown>
+  if (
+    typeof v.x === 'number' &&
+    typeof v.y === 'number' &&
+    typeof v.zoom === 'number'
+  ) {
+    return { x: v.x, y: v.y, zoom: v.zoom }
+  }
+  return DEFAULT_VIEWPORT
+}
+
+function parseAssets(
+  raw: unknown,
+): Record<string, string> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const assets: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string' && value.startsWith('data:')) {
+      assets[key] = value
+    }
+  }
+  return Object.keys(assets).length > 0 ? assets : undefined
+}
+
 export function toDocument(
-  nodes: StickyNode[],
+  nodes: BoardNode[],
   edges: LabeledEdge[],
   viewport: BoardDocument['viewport'],
 ): BoardDocument {
+  const notes = nodes.filter(isStickyNode).map((n: StickyNode) => ({
+    id: n.id,
+    x: n.position.x,
+    y: n.position.y,
+    text: n.data.text,
+    color: n.data.color,
+  }))
+
+  const images = nodes.filter(isImageNode).map((n: ImageNode) => ({
+    id: n.id,
+    x: n.position.x,
+    y: n.position.y,
+    width: n.data.width,
+    height: n.data.height,
+    imageId: n.data.imageId,
+    caption: n.data.caption,
+  }))
+
   return {
-    version: 1,
-    notes: nodes.map((n) => ({
-      id: n.id,
-      x: n.position.x,
-      y: n.position.y,
-      text: n.data.text,
-      color: n.data.color,
-    })),
+    version: 2,
+    notes,
+    images,
     edges: edges.map((e) => ({
       id: e.id,
       source: e.source,
@@ -41,20 +152,37 @@ export function toDocument(
 }
 
 export function fromDocument(doc: BoardDocument): {
-  nodes: StickyNode[]
+  nodes: BoardNode[]
   edges: LabeledEdge[]
   viewport: BoardDocument['viewport']
 } {
+  const stickyNodes: StickyNode[] = doc.notes.map((n) => ({
+    id: n.id,
+    type: 'sticky' as const,
+    position: { x: n.x, y: n.y },
+    data: {
+      text: n.text,
+      color: isNoteColor(n.color) ? n.color : 'yellow',
+    },
+  }))
+
+  const imageNodes: ImageNode[] = doc.images.map((img) => ({
+    id: img.id,
+    type: 'image' as const,
+    position: { x: img.x, y: img.y },
+    style: { width: img.width, height: img.height },
+    width: img.width,
+    height: img.height,
+    data: {
+      imageId: img.imageId,
+      caption: img.caption,
+      width: img.width,
+      height: img.height,
+    },
+  }))
+
   return {
-    nodes: doc.notes.map((n) => ({
-      id: n.id,
-      type: 'sticky' as const,
-      position: { x: n.x, y: n.y },
-      data: {
-        text: n.text,
-        color: isNoteColor(n.color) ? n.color : 'yellow',
-      },
-    })),
+    nodes: [...stickyNodes, ...imageNodes],
     edges: doc.edges.map((e) => ({
       id: e.id,
       type: 'labeled' as const,
@@ -72,71 +200,74 @@ export function fromDocument(doc: BoardDocument): {
 export function parseDocument(raw: unknown): BoardDocument | null {
   if (!raw || typeof raw !== 'object') return null
   const obj = raw as Record<string, unknown>
-  if (obj.version !== 1) return null
-  if (!Array.isArray(obj.notes) || !Array.isArray(obj.edges)) return null
+  if (obj.version !== 1 && obj.version !== 2) return null
 
-  const notes: BoardDocument['notes'] = []
-  for (const item of obj.notes) {
-    if (!item || typeof item !== 'object') return null
-    const n = item as Record<string, unknown>
-    if (typeof n.id !== 'string') return null
-    if (typeof n.x !== 'number' || typeof n.y !== 'number') return null
-    if (typeof n.text !== 'string') return null
-    notes.push({
-      id: n.id,
-      x: n.x,
-      y: n.y,
-      text: n.text,
-      color: isNoteColor(n.color) ? n.color : 'yellow',
-    })
+  const notes = parseNotes(obj.notes)
+  if (!notes) return null
+
+  const images = obj.version === 1 ? [] : parseImages(obj.images)
+  if (!images) return null
+
+  const edges = parseEdges(obj.edges)
+  if (!edges) return null
+
+  const viewport = parseViewport(obj.viewport)
+  const assets = parseAssets(obj.assets)
+
+  return {
+    version: 2,
+    notes,
+    images,
+    edges,
+    viewport,
+    ...(assets ? { assets } : {}),
   }
-
-  const edges: BoardDocument['edges'] = []
-  for (const item of obj.edges) {
-    if (!item || typeof item !== 'object') return null
-    const e = item as Record<string, unknown>
-    if (typeof e.id !== 'string') return null
-    if (typeof e.source !== 'string' || typeof e.target !== 'string') return null
-    edges.push({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      sourceHandle: typeof e.sourceHandle === 'string' ? e.sourceHandle : null,
-      targetHandle: typeof e.targetHandle === 'string' ? e.targetHandle : null,
-      label: typeof e.label === 'string' ? e.label : '',
-    })
-  }
-
-  let viewport = DEFAULT_VIEWPORT
-  if (obj.viewport && typeof obj.viewport === 'object') {
-    const v = obj.viewport as Record<string, unknown>
-    if (
-      typeof v.x === 'number' &&
-      typeof v.y === 'number' &&
-      typeof v.zoom === 'number'
-    ) {
-      viewport = { x: v.x, y: v.y, zoom: v.zoom }
-    }
-  }
-
-  return { version: 1, notes, edges, viewport }
 }
 
 export function loadFromLocalStorage(): BoardDocument | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
-    return parseDocument(JSON.parse(raw) as unknown)
+    const doc = parseDocument(JSON.parse(raw) as unknown)
+    if (!doc) return null
+    // Never persist assets in localStorage
+    const { assets: _assets, ...rest } = doc
+    return rest
   } catch {
     return null
   }
 }
 
 export function saveToLocalStorage(doc: BoardDocument): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(doc))
+  const { assets: _assets, ...rest } = doc
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
 }
 
-export function downloadJson(doc: BoardDocument, filename = 'fusen-board.json'): void {
+export async function buildExportDocument(
+  nodes: BoardNode[],
+  edges: LabeledEdge[],
+  viewport: BoardDocument['viewport'],
+): Promise<BoardDocument> {
+  const doc = toDocument(nodes, edges, viewport)
+  const imageIds = doc.images.map((img) => img.imageId)
+  const assets = await collectAssets(imageIds)
+  return { ...doc, assets }
+}
+
+export async function prepareImportedDocument(
+  raw: unknown,
+): Promise<BoardDocument | null> {
+  const doc = parseDocument(raw)
+  if (!doc) return null
+  await hydrateAssets(doc.assets)
+  const { assets: _assets, ...rest } = doc
+  return rest
+}
+
+export function downloadJson(
+  doc: BoardDocument,
+  filename = 'fusen-board.json',
+): void {
   const blob = new Blob([JSON.stringify(doc, null, 2)], {
     type: 'application/json',
   })
@@ -150,8 +281,9 @@ export function downloadJson(doc: BoardDocument, filename = 'fusen-board.json'):
 
 export function createEmptyDocument(): BoardDocument {
   return {
-    version: 1,
+    version: 2,
     notes: [],
+    images: [],
     edges: [],
     viewport: { ...DEFAULT_VIEWPORT },
   }
@@ -159,7 +291,7 @@ export function createEmptyDocument(): BoardDocument {
 
 export function createStarterDocument(): BoardDocument {
   return {
-    version: 1,
+    version: 2,
     notes: [
       {
         id: 'note-1',
@@ -176,6 +308,7 @@ export function createStarterDocument(): BoardDocument {
         color: 'mint',
       },
     ],
+    images: [],
     edges: [
       {
         id: 'edge-1',

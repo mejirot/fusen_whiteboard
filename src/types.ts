@@ -16,7 +16,16 @@ export type StickyNoteData = {
   color: NoteColorId
 }
 
+export type ImageNodeData = {
+  imageId: string
+  caption: string
+  width: number
+  height: number
+}
+
 export type StickyNode = Node<StickyNoteData, 'sticky'>
+export type ImageNode = Node<ImageNodeData, 'image'>
+export type BoardNode = StickyNode | ImageNode
 
 export type LabeledEdgeData = {
   label: string
@@ -24,7 +33,7 @@ export type LabeledEdgeData = {
 
 export type LabeledEdge = Edge<LabeledEdgeData, 'labeled'>
 
-export type BoardDocument = {
+export type BoardDocumentV1 = {
   version: 1
   notes: Array<{
     id: string
@@ -44,11 +53,53 @@ export type BoardDocument = {
   viewport: Viewport
 }
 
+export type BoardDocument = {
+  version: 2
+  notes: Array<{
+    id: string
+    x: number
+    y: number
+    text: string
+    color: NoteColorId
+  }>
+  images: Array<{
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    imageId: string
+    caption: string
+  }>
+  edges: Array<{
+    id: string
+    source: string
+    target: string
+    sourceHandle?: string | null
+    targetHandle?: string | null
+    label: string
+  }>
+  viewport: Viewport
+  /** File export only: imageId → data URL. Omitted from localStorage. */
+  assets?: Record<string, string>
+}
+
 export type BoardSnapshot = {
-  nodes: StickyNode[]
+  nodes: BoardNode[]
   edges: LabeledEdge[]
 }
 
 export const STORAGE_KEY = 'fusen-whiteboard-v1'
 
 export const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 }
+
+export const DEFAULT_IMAGE_MAX = 320
+export const MIN_IMAGE_SIZE = 80
+
+export function isStickyNode(node: BoardNode): node is StickyNode {
+  return node.type === 'sticky'
+}
+
+export function isImageNode(node: BoardNode): node is ImageNode {
+  return node.type === 'image'
+}

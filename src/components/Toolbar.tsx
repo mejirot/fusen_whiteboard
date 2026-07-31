@@ -32,7 +32,14 @@ export function Toolbar() {
   }, [addNote, screenToFlowPosition])
 
   const onExport = useCallback(() => {
-    downloadJson(exportDocument())
+    void (async () => {
+      try {
+        const doc = await exportDocument()
+        downloadJson(doc)
+      } catch {
+        window.alert('書き出しに失敗しました')
+      }
+    })()
   }, [exportDocument])
 
   const onImportClick = useCallback(() => {
@@ -44,7 +51,7 @@ export function Toolbar() {
       if (!file) return
       try {
         const text = await file.text()
-        const ok = importDocument(JSON.parse(text) as unknown)
+        const ok = await importDocument(JSON.parse(text) as unknown)
         if (!ok) window.alert('JSONの形式が正しくありません')
       } catch {
         window.alert('ファイルを読み込めませんでした')
@@ -118,7 +125,8 @@ export function Toolbar() {
       )}
 
       <p className="toolbar__hint">
-        空白ドラッグで選択 / 中ボタンドラッグでパン / ホイールズーム / 矢印ラベルはダブルクリック
+        画像は Ctrl+V またはドロップ / キャプションはダブルクリック / 空白ドラッグで選択 /
+        中ボタンドラッグでパン
       </p>
     </header>
   )
