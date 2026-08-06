@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { downloadJson } from '../persistence/storage'
 import { useBoardStore } from '../store/boardStore'
@@ -6,6 +6,7 @@ import { NOTE_COLORS } from '../types'
 
 export function Toolbar() {
   const fileRef = useRef<HTMLInputElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
   const { screenToFlowPosition } = useReactFlow()
 
   const addNote = useBoardStore((s) => s.addNote)
@@ -19,6 +20,17 @@ export function Toolbar() {
   const importDocument = useBoardStore((s) => s.importDocument)
   const saveError = useBoardStore((s) => s.saveError)
   const clearSaveError = useBoardStore((s) => s.clearSaveError)
+  const title = useBoardStore((s) => s.title)
+  const renameBoard = useBoardStore((s) => s.renameBoard)
+  const setLibraryOpen = useBoardStore((s) => s.setLibraryOpen)
+  const createBoard = useBoardStore((s) => s.createBoard)
+  const libraryOpen = useBoardStore((s) => s.libraryOpen)
+
+  const [draftTitle, setDraftTitle] = useState(title)
+
+  useEffect(() => {
+    setDraftTitle(title)
+  }, [title])
 
   const onAdd = useCallback(() => {
     const center = screenToFlowPosition({
@@ -60,9 +72,46 @@ export function Toolbar() {
     [importDocument],
   )
 
+  const commitTitle = useCallback(() => {
+    renameBoard(draftTitle)
+  }, [draftTitle, renameBoard])
+
   return (
     <header className="toolbar">
-      <div className="toolbar__brand">付箋ホワイトボード</div>
+      <div className="toolbar__brand-block">
+        <div className="toolbar__brand">付箋ホワイトボード</div>
+        <input
+          ref={titleRef}
+          className="toolbar__title"
+          value={draftTitle}
+          onChange={(e) => setDraftTitle(e.target.value)}
+          onBlur={commitTitle}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTitle()
+              titleRef.current?.blur()
+            }
+          }}
+          aria-label="ボードタイトル"
+          title="ボードタイトル"
+        />
+        <button
+          type="button"
+          className={libraryOpen ? 'is-active' : undefined}
+          onClick={() => setLibraryOpen(!libraryOpen)}
+          title="ボード一覧"
+        >
+          ボード一覧
+        </button>
+        <button
+          type="button"
+          onClick={() => void createBoard()}
+          title="新規ボード"
+        >
+          新規
+        </button>
+      </div>
 
       <div className="toolbar__group">
         <button type="button" onClick={onAdd} title="付箋を追加 (ダブルクリックでも可)">
@@ -100,7 +149,7 @@ export function Toolbar() {
         <button type="button" onClick={onExport} title="JSON書き出し">
           書き出し
         </button>
-        <button type="button" onClick={onImportClick} title="JSON読み込み">
+        <button type="button" onClick={onImportClick} title="JSON読み込み（新規ボードとして）">
           読み込み
         </button>
         <input

@@ -17,6 +17,7 @@ import {
 } from 'react'
 import { useBoardStore } from '../store/boardStore'
 import { isImageNode, isStickyNode, type BoardNode } from '../types'
+import { BoardLibrary } from './BoardLibrary'
 import { ImageNode } from './ImageNode'
 import { LabeledEdge } from './LabeledEdge'
 import { StickyNoteNode } from './StickyNoteNode'
@@ -266,5 +267,43 @@ function BoardCanvas() {
 }
 
 export function Board() {
-  return <BoardCanvas />
+  const bootstrap = useBoardStore((s) => s.bootstrap)
+  const bootstrapping = useBoardStore((s) => s.bootstrapping)
+  const hydrated = useBoardStore((s) => s.hydrated)
+  const saveError = useBoardStore((s) => s.saveError)
+
+  useEffect(() => {
+    void bootstrap()
+  }, [bootstrap])
+
+  if (bootstrapping) {
+    return (
+      <div className="board board--status">
+        <p>ワークスペースを読み込み中…</p>
+      </div>
+    )
+  }
+
+  if (!hydrated) {
+    return (
+      <div className="board board--status">
+        <p>{saveError ?? 'ローカルサービスに接続できません。'}</p>
+        <p className="board__status-hint">
+          別ターミナルで <code>npm run dev:service</code> を起動し、
+          <code>npm run dev</code> で UI を開いてください。または{' '}
+          <code>npm start</code> を使います。
+        </p>
+        <button type="button" onClick={() => void bootstrap()}>
+          再試行
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <BoardCanvas />
+      <BoardLibrary />
+    </>
+  )
 }

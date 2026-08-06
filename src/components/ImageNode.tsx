@@ -120,6 +120,7 @@ function ImageNodeComponent({
             src={src}
             alt={caption || '画像'}
             draggable={false}
+            onError={() => setSrc(null)}
           />
         ) : (
           <div className="image-node__missing">画像を読み込めません</div>

@@ -8,6 +8,7 @@ import {
   type LabeledEdge,
   type NoteColorId,
   type StickyNode,
+  type StoredBoard,
   isImageNode,
   isStickyNode,
 } from '../types'
@@ -99,9 +100,7 @@ function parseViewport(raw: unknown): BoardDocument['viewport'] {
   return DEFAULT_VIEWPORT
 }
 
-function parseAssets(
-  raw: unknown,
-): Record<string, string> | undefined {
+function parseAssets(raw: unknown): Record<string, string> | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const assets: Record<string, string> = {}
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -151,7 +150,7 @@ export function toDocument(
   }
 }
 
-export function fromDocument(doc: BoardDocument): {
+export function fromDocument(doc: BoardDocument | StoredBoard): {
   nodes: BoardNode[]
   edges: LabeledEdge[]
   viewport: BoardDocument['viewport']
@@ -230,7 +229,6 @@ export function loadFromLocalStorage(): BoardDocument | null {
     if (!raw) return null
     const doc = parseDocument(JSON.parse(raw) as unknown)
     if (!doc) return null
-    // Never persist assets in localStorage
     const { assets: _assets, ...rest } = doc
     return rest
   } catch {
@@ -238,9 +236,43 @@ export function loadFromLocalStorage(): BoardDocument | null {
   }
 }
 
-export function saveToLocalStorage(doc: BoardDocument): void {
-  const { assets: _assets, ...rest } = doc
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
+export function clearLocalStorageDocument(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+export function boardContentFromDocument(doc: BoardDocument): Pick<
+  StoredBoard,
+  'schemaVersion' | 'title' | 'notes' | 'images' | 'edges' | 'viewport'
+> {
+  return {
+    schemaVersion: 1,
+    title: '移行したボード',
+    notes: doc.notes,
+    images: doc.images,
+    edges: doc.edges,
+    viewport: doc.viewport,
+  }
+}
+
+export function toStoredBoardPayload(
+  title: string,
+  nodes: BoardNode[],
+  edges: LabeledEdge[],
+  viewport: BoardDocument['viewport'],
+): Omit<StoredBoard, 'id' | 'revision' | 'createdAt' | 'updatedAt'> {
+  const doc = toDocument(nodes, edges, viewport)
+  return {
+    schemaVersion: 1,
+    title,
+    notes: doc.notes,
+    images: doc.images,
+    edges: doc.edges,
+    viewport: doc.viewport,
+  }
 }
 
 export async function buildExportDocument(

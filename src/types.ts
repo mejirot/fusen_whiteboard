@@ -80,8 +80,32 @@ export type BoardDocument = {
     label: string
   }>
   viewport: Viewport
-  /** File export only: imageId → data URL. Omitted from localStorage. */
+  /** File export only: imageId → data URL. Omitted from workspace saves. */
   assets?: Record<string, string>
+}
+
+/** Workspace-persisted board (server board.json). */
+export type StoredBoard = {
+  schemaVersion: 1
+  id: string
+  title: string
+  revision: number
+  createdAt: string
+  updatedAt: string
+  notes: BoardDocument['notes']
+  images: BoardDocument['images']
+  edges: BoardDocument['edges']
+  viewport: Viewport
+}
+
+export type BoardSummary = {
+  id: string
+  title: string
+  revision: number
+  updatedAt: string
+  noteCount: number
+  imageCount: number
+  edgeCount: number
 }
 
 export type BoardSnapshot = {
@@ -90,6 +114,7 @@ export type BoardSnapshot = {
 }
 
 export const STORAGE_KEY = 'fusen-whiteboard-v1'
+export const ACTIVE_BOARD_KEY = 'fusen-active-board-id'
 
 export const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 }
 

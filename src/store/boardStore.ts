@@ -9,30 +9,50 @@ import {
 } from '@xyflow/react'
 import { create } from 'zustand'
 import {
+  ApiError,
+  createBoard as apiCreateBoard,
+  deleteBoard as apiDeleteBoard,
+  ensureSession,
+  getBoard as apiGetBoard,
+  listBoards,
+  listTrash,
+  putBoard as apiPutBoard,
+  restoreBoard as apiRestoreBoard,
+} from '../api/boards'
+import {
+  clearLegacyImageDb,
+  deleteImageBlobs,
   fitImageSize,
-  gcUnusedImages,
+  getLegacyImageBlob,
+  listLegacyImageIds,
   putImageBlob,
   readImageSize,
   resolveImageUrl,
+  revokeAllImageUrls,
+  setActiveBoardId,
 } from '../persistence/imageDb'
 import {
+  boardContentFromDocument,
   buildExportDocument,
-  createStarterDocument,
+  clearLocalStorageDocument,
   fromDocument,
   loadFromLocalStorage,
+  parseDocument,
   prepareImportedDocument,
-  saveToLocalStorage,
-  toDocument,
+  toStoredBoardPayload,
 } from '../persistence/storage'
 import {
+  ACTIVE_BOARD_KEY,
   DEFAULT_VIEWPORT,
   type BoardDocument,
   type BoardNode,
   type BoardSnapshot,
+  type BoardSummary,
   type ImageNode,
   type LabeledEdge,
   type NoteColorId,
   type StickyNode,
+  type StoredBoard,
   isImageNode,
   isStickyNode,
 } from '../types'
@@ -69,19 +89,26 @@ function collectReferencedImageIds(
 }
 
 function nextPasteCaption(nodes: BoardNode[]): string {
-  const used = new Set(
-    nodes.filter(isImageNode).map((n) => n.data.caption),
-  )
+  const used = new Set(nodes.filter(isImageNode).map((n) => n.data.caption))
   let i = 1
   while (used.has(`画像 ${i}`)) i += 1
   return `画像 ${i}`
 }
 
-function initialBoard() {
-  const stored = loadFromLocalStorage()
-  const doc = stored ?? createStarterDocument()
-  const { nodes, edges, viewport } = fromDocument(doc)
-  return { nodes, edges, viewport }
+function rememberActiveBoardId(boardId: string): void {
+  try {
+    localStorage.setItem(ACTIVE_BOARD_KEY, boardId)
+  } catch {
+    // ignore
+  }
+}
+
+function readRememberedBoardId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_BOARD_KEY)
+  } catch {
+    return null
+  }
 }
 
 type BoardState = {
@@ -93,6 +120,14 @@ type BoardState = {
   saveError: string | null
   hydrated: boolean
   boardEpoch: number
+
+  boardId: string | null
+  title: string
+  revision: number
+  boards: BoardSummary[]
+  trashedBoards: BoardSummary[]
+  libraryOpen: boolean
+  bootstrapping: boolean
 
   commit: () => void
   undo: () => void
@@ -124,27 +159,114 @@ type BoardState = {
   importDocument: (raw: unknown) => Promise<boolean>
   clearSaveError: () => void
   scheduleAutosave: () => void
+
+  bootstrap: () => Promise<void>
+  refreshLibrary: () => Promise<void>
+  createBoard: (title?: string) => Promise<void>
+  openBoard: (boardId: string) => Promise<void>
+  renameBoard: (title: string) => void
+  deleteCurrentBoard: () => Promise<void>
+  restoreBoard: (boardId: string) => Promise<void>
+  setLibraryOpen: (open: boolean) => void
 }
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null
 let dragBaseline: BoardSnapshot | null = null
+let knownImageIds = new Set<string>()
+let saveGeneration = 0
 
 export const useBoardStore = create<BoardState>((set, get) => {
-  const boot = initialBoard()
+  const applyBoard = (board: StoredBoard, resetHistory = true) => {
+    setActiveBoardId(board.id)
+    rememberActiveBoardId(board.id)
+    revokeAllImageUrls()
+    const { nodes, edges, viewport } = fromDocument(board)
+    knownImageIds = new Set(board.images.map((img) => img.imageId))
+    set({
+      boardId: board.id,
+      title: board.title,
+      revision: board.revision,
+      nodes,
+      edges,
+      viewport: viewport ?? DEFAULT_VIEWPORT,
+      ...(resetHistory ? { past: [], future: [] } : {}),
+      boardEpoch: get().boardEpoch + 1,
+      saveError: null,
+    })
+  }
 
   const scheduleAutosave = () => {
+    if (!get().boardId || !get().hydrated) return
     if (autosaveTimer) clearTimeout(autosaveTimer)
     autosaveTimer = setTimeout(() => {
-      const { nodes, edges, viewport, past, future } = get()
-      try {
-        saveToLocalStorage(toDocument(nodes, edges, viewport))
-        set({ saveError: null })
-        const keep = collectReferencedImageIds(nodes, past, future)
-        void gcUnusedImages(keep)
-      } catch {
-        set({ saveError: '自動保存に失敗しました（容量不足の可能性）' })
-      }
+      void persistBoard()
     }, AUTOSAVE_MS)
+  }
+
+  const persistBoard = async () => {
+    const {
+      boardId,
+      title,
+      revision,
+      nodes,
+      edges,
+      viewport,
+      past,
+      future,
+    } = get()
+    if (!boardId) return
+    const gen = ++saveGeneration
+    try {
+      const payload = toStoredBoardPayload(title, nodes, edges, viewport)
+      const updated = await apiPutBoard(boardId, revision, payload)
+      if (gen !== saveGeneration) return
+      set({ revision: updated.revision, saveError: null })
+      const keep = collectReferencedImageIds(nodes, past, future)
+      const stale = [...knownImageIds].filter((id) => !keep.has(id))
+      if (stale.length > 0) {
+        await deleteImageBlobs(stale)
+        for (const id of stale) knownImageIds.delete(id)
+      }
+      for (const id of keep) knownImageIds.add(id)
+      void get().refreshLibrary()
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        set({
+          saveError: '他で更新されたため保存できません。ボードを再読み込みしてください。',
+        })
+        return
+      }
+      set({
+        saveError:
+          error instanceof Error
+            ? error.message
+            : '自動保存に失敗しました',
+      })
+    }
+  }
+
+  const migrateLegacyIfNeeded = async (
+    boards: BoardSummary[],
+  ): Promise<StoredBoard | null> => {
+    if (boards.length > 0) return null
+    const legacy = loadFromLocalStorage()
+    if (!legacy) return null
+
+    const created = await apiCreateBoard({
+      title: '移行したボード',
+      board: boardContentFromDocument(legacy),
+    })
+    setActiveBoardId(created.id)
+    const imageIds = new Set(legacy.images.map((img) => img.imageId))
+    const legacyIds = await listLegacyImageIds()
+    for (const id of legacyIds) {
+      if (!imageIds.has(id)) continue
+      const blob = await getLegacyImageBlob(id)
+      if (blob) await putImageBlob(id, blob)
+    }
+    clearLocalStorageDocument()
+    await clearLegacyImageDb()
+    return created
   }
 
   const syncImageDimensions = (nodes: BoardNode[]): BoardNode[] =>
@@ -163,16 +285,139 @@ export const useBoardStore = create<BoardState>((set, get) => {
     })
 
   return {
-    nodes: boot.nodes,
-    edges: boot.edges,
-    viewport: boot.viewport,
+    nodes: [],
+    edges: [],
+    viewport: DEFAULT_VIEWPORT,
     past: [],
     future: [],
     saveError: null,
-    hydrated: true,
+    hydrated: false,
     boardEpoch: 0,
+    boardId: null,
+    title: '',
+    revision: 0,
+    boards: [],
+    trashedBoards: [],
+    libraryOpen: false,
+    bootstrapping: true,
 
     scheduleAutosave,
+
+    bootstrap: async () => {
+      set({ bootstrapping: true, saveError: null })
+      try {
+        await ensureSession()
+        let boards = await listBoards()
+        const migrated = await migrateLegacyIfNeeded(boards)
+        if (migrated) {
+          boards = await listBoards()
+          applyBoard(migrated)
+        } else if (boards.length === 0) {
+          const created = await apiCreateBoard({ starter: true })
+          boards = await listBoards()
+          applyBoard(created)
+        } else {
+          const remembered = readRememberedBoardId()
+          const target =
+            boards.find((b) => b.id === remembered)?.id ?? boards[0]!.id
+          const board = await apiGetBoard(target)
+          applyBoard(board)
+        }
+        const trashedBoards = await listTrash()
+        set({
+          boards,
+          trashedBoards,
+          hydrated: true,
+          bootstrapping: false,
+        })
+      } catch (error) {
+        set({
+          bootstrapping: false,
+          hydrated: false,
+          saveError:
+            error instanceof Error
+              ? error.message
+              : 'ワークスペースに接続できません',
+        })
+      }
+    },
+
+    refreshLibrary: async () => {
+      try {
+        const [boards, trashedBoards] = await Promise.all([
+          listBoards(),
+          listTrash(),
+        ])
+        set({ boards, trashedBoards })
+      } catch {
+        // ignore refresh failures
+      }
+    },
+
+    createBoard: async (title) => {
+      await persistBoard()
+      const board = await apiCreateBoard({ title: title ?? '無題のボード' })
+      applyBoard(board)
+      await get().refreshLibrary()
+      set({ libraryOpen: false })
+    },
+
+    openBoard: async (boardId) => {
+      if (boardId === get().boardId) {
+        set({ libraryOpen: false })
+        return
+      }
+      await persistBoard()
+      const board = await apiGetBoard(boardId)
+      applyBoard(board)
+      set({ libraryOpen: false })
+    },
+
+    renameBoard: (title) => {
+      const next = title.trim() || '無題のボード'
+      if (next === get().title) return
+      set({ title: next })
+      scheduleAutosave()
+    },
+
+    deleteCurrentBoard: async () => {
+      const { boardId, revision, boards } = get()
+      if (!boardId) return
+      if (boards.length <= 1) {
+        set({ saveError: '最後のボードは削除できません' })
+        return
+      }
+      if (autosaveTimer) {
+        clearTimeout(autosaveTimer)
+        autosaveTimer = null
+      }
+      await apiDeleteBoard(boardId, revision)
+      const remaining = (await listBoards()).filter((b) => b.id !== boardId)
+      const nextId = remaining[0]?.id
+      if (!nextId) {
+        const created = await apiCreateBoard({ starter: true })
+        applyBoard(created)
+      } else {
+        applyBoard(await apiGetBoard(nextId))
+      }
+      await get().refreshLibrary()
+      set({ libraryOpen: false })
+    },
+
+    restoreBoard: async (boardId) => {
+      const trashed = get().trashedBoards.find((b) => b.id === boardId)
+      if (!trashed) return
+      await persistBoard()
+      const board = await apiRestoreBoard(boardId, trashed.revision)
+      applyBoard(board)
+      await get().refreshLibrary()
+      set({ libraryOpen: false })
+    },
+
+    setLibraryOpen: (open) => {
+      set({ libraryOpen: open })
+      if (open) void get().refreshLibrary()
+    },
 
     commit: () => {
       const { nodes, edges, past } = get()
@@ -213,9 +458,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
         (c) => c.type === 'remove' || c.type === 'add',
       )
       if (structural) get().commit()
-      const next = syncImageDimensions(
-        applyNodeChanges(changes, get().nodes),
-      )
+      const next = syncImageDimensions(applyNodeChanges(changes, get().nodes))
       set({ nodes: next })
       scheduleAutosave()
     },
@@ -267,6 +510,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
         const fitted = fitImageSize(size.width, size.height)
         const imageId = uid('img')
         await putImageBlob(imageId, blob)
+        knownImageIds.add(imageId)
         await resolveImageUrl(imageId)
 
         get().commit()
@@ -417,8 +661,10 @@ export const useBoardStore = create<BoardState>((set, get) => {
           ) {
             return true
           }
-          const beforeW = before.width ?? (isImageNode(before) ? before.data.width : 0)
-          const beforeH = before.height ?? (isImageNode(before) ? before.data.height : 0)
+          const beforeW =
+            before.width ?? (isImageNode(before) ? before.data.width : 0)
+          const beforeH =
+            before.height ?? (isImageNode(before) ? before.data.height : 0)
           const afterW = n.width ?? (isImageNode(n) ? n.data.width : 0)
           const afterH = n.height ?? (isImageNode(n) ? n.data.height : 0)
           return beforeW !== afterW || beforeH !== afterH
@@ -439,17 +685,38 @@ export const useBoardStore = create<BoardState>((set, get) => {
     },
 
     importDocument: async (raw) => {
-      const doc = await prepareImportedDocument(raw)
-      if (!doc) return false
-      get().commit()
-      const { nodes, edges, viewport } = fromDocument(doc)
+      const parsed = parseDocument(raw)
+      if (!parsed) return false
+      await persistBoard()
+      const board = await apiCreateBoard({
+        title: '読み込んだボード',
+        board: {
+          notes: parsed.notes,
+          images: parsed.images,
+          edges: parsed.edges,
+          viewport: parsed.viewport,
+        },
+      })
+      setActiveBoardId(board.id)
+      const prepared = await prepareImportedDocument(raw)
+      if (!prepared) return false
+      // Re-save with hydrated assets already uploaded via prepareImportedDocument
+      const { nodes, edges, viewport } = fromDocument(prepared)
+      knownImageIds = new Set(prepared.images.map((img) => img.imageId))
       set({
+        boardId: board.id,
+        title: board.title,
+        revision: board.revision,
         nodes,
         edges,
         viewport: viewport ?? DEFAULT_VIEWPORT,
+        past: [],
+        future: [],
         boardEpoch: get().boardEpoch + 1,
       })
+      rememberActiveBoardId(board.id)
       scheduleAutosave()
+      await get().refreshLibrary()
       return true
     },
 

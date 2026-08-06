@@ -1,6 +1,19 @@
+import { assetUrl, deleteAsset, putAsset } from '../api/boards'
+
+/** Legacy IndexedDB (migration only). */
 const DB_NAME = 'fusen-whiteboard-images'
 const STORE = 'images'
 const DB_VERSION = 1
+
+let activeBoardId: string | null = null
+
+export function setActiveBoardId(boardId: string | null): void {
+  activeBoardId = boardId
+}
+
+export function getActiveBoardId(): string | null {
+  return activeBoardId
+}
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -16,80 +29,52 @@ function openDb(): Promise<IDBDatabase> {
   })
 }
 
-function storeTx(
-  db: IDBDatabase,
-  mode: IDBTransactionMode,
-): IDBObjectStore {
-  return db.transaction(STORE, mode).objectStore(STORE)
-}
-
 export async function putImageBlob(id: string, blob: Blob): Promise<void> {
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite')
-    tx.objectStore(STORE).put(blob, id)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error ?? new Error('putImageBlob failed'))
-  })
-  db.close()
+  if (!activeBoardId) {
+    throw new Error('active board is not set')
+  }
+  await putAsset(activeBoardId, id, blob)
+  revokeImageUrl(id)
 }
 
 export async function getImageBlob(id: string): Promise<Blob | undefined> {
-  const db = await openDb()
-  const blob = await new Promise<Blob | undefined>((resolve, reject) => {
-    const req = storeTx(db, 'readonly').get(id)
-    req.onsuccess = () => resolve(req.result as Blob | undefined)
-    req.onerror = () => reject(req.error ?? new Error('getImageBlob failed'))
-  })
-  db.close()
-  return blob
+  if (!activeBoardId) return undefined
+  try {
+    const response = await fetch(assetUrl(activeBoardId, id), {
+      credentials: 'same-origin',
+    })
+    if (!response.ok) return undefined
+    return await response.blob()
+  } catch {
+    return undefined
+  }
 }
 
 export async function deleteImageBlobs(ids: string[]): Promise<void> {
-  if (ids.length === 0) return
-  const db = await openDb()
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite')
-    const store = tx.objectStore(STORE)
-    for (const id of ids) store.delete(id)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error ?? new Error('deleteImageBlobs failed'))
-  })
-  db.close()
-}
-
-export async function listImageIds(): Promise<string[]> {
-  const db = await openDb()
-  const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
-    const req = storeTx(db, 'readonly').getAllKeys()
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error('listImageIds failed'))
-  })
-  db.close()
-  return keys.filter((k): k is string => typeof k === 'string')
+  if (!activeBoardId || ids.length === 0) return
+  const boardId = activeBoardId
+  await Promise.all(ids.map((id) => deleteAsset(boardId, id)))
 }
 
 const urlCache = new Map<string, string>()
 
 export async function resolveImageUrl(id: string): Promise<string | null> {
-  const cached = urlCache.get(id)
+  if (!activeBoardId) return null
+  const key = `${activeBoardId}:${id}`
+  const cached = urlCache.get(key)
   if (cached) return cached
-  const blob = await getImageBlob(id)
-  if (!blob) return null
-  const url = URL.createObjectURL(blob)
-  urlCache.set(id, url)
+  const url = assetUrl(activeBoardId, id)
+  urlCache.set(key, url)
   return url
 }
 
 export function revokeImageUrl(id: string): void {
-  const url = urlCache.get(id)
-  if (!url) return
-  URL.revokeObjectURL(url)
-  urlCache.delete(id)
+  if (!activeBoardId) return
+  const key = `${activeBoardId}:${id}`
+  urlCache.delete(key)
 }
 
 export function revokeAllImageUrls(): void {
-  for (const url of urlCache.values()) URL.revokeObjectURL(url)
   urlCache.clear()
 }
 
@@ -154,23 +139,63 @@ export async function collectAssets(
 export async function hydrateAssets(
   assets: Record<string, string> | undefined,
 ): Promise<void> {
-  if (!assets) return
+  if (!assets || !activeBoardId) return
   for (const [id, dataUrl] of Object.entries(assets)) {
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) continue
     try {
       const blob = await dataUrlToBlob(dataUrl)
       await putImageBlob(id, blob)
-      revokeImageUrl(id)
     } catch {
       // skip corrupt asset
     }
   }
 }
 
-export async function gcUnusedImages(keepIds: Iterable<string>): Promise<void> {
-  const keep = new Set(keepIds)
-  const existing = await listImageIds()
-  const stale = existing.filter((id) => !keep.has(id))
-  for (const id of stale) revokeImageUrl(id)
-  await deleteImageBlobs(stale)
+
+/** Read legacy IndexedDB blobs for one-time migration. */
+export async function listLegacyImageIds(): Promise<string[]> {
+  try {
+    const db = await openDb()
+    const keys = await new Promise<IDBValidKey[]>((resolve, reject) => {
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys()
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('list failed'))
+    })
+    db.close()
+    return keys.filter((k): k is string => typeof k === 'string')
+  } catch {
+    return []
+  }
+}
+
+export async function getLegacyImageBlob(
+  id: string,
+): Promise<Blob | undefined> {
+  try {
+    const db = await openDb()
+    const blob = await new Promise<Blob | undefined>((resolve, reject) => {
+      const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(id)
+      req.onsuccess = () => resolve(req.result as Blob | undefined)
+      req.onerror = () => reject(req.error ?? new Error('get failed'))
+    })
+    db.close()
+    return blob
+  } catch {
+    return undefined
+  }
+}
+
+export async function clearLegacyImageDb(): Promise<void> {
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      tx.objectStore(STORE).clear()
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('clear failed'))
+    })
+    db.close()
+  } catch {
+    // ignore
+  }
 }
