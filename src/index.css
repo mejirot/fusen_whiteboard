@@ -275,6 +275,73 @@ button:disabled {
   line-height: 1;
 }
 
+/* Let clicks pass through the frame body to notes above/under it. */
+.react-flow__node-frame {
+  pointer-events: none;
+}
+
+.react-flow__node-frame .frame-node__title,
+.react-flow__node-frame .react-flow__resize-control {
+  pointer-events: all;
+}
+
+.frame-node {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 2px dashed #8b95a8;
+  border-radius: 4px;
+  background: rgba(143, 155, 178, 0.1);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.frame-node.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+  background: rgba(47, 111, 237, 0.06);
+}
+
+.frame-node__title {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(247, 248, 251, 0.92);
+  border-bottom: 1px solid rgba(139, 149, 168, 0.45);
+  cursor: grab;
+  border-radius: 2px 2px 0 0;
+  pointer-events: all;
+}
+
+.frame-node__title-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.frame-node__title-hint {
+  color: rgba(31, 36, 48, 0.4);
+  font-weight: 400;
+}
+
+.frame-node__title-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0;
+}
+
 .sticky-note {
   width: 180px;
   min-height: 120px;

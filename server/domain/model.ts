@@ -32,6 +32,17 @@ const imageSchema = z
   })
   .strict()
 
+const frameSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    x: z.number().finite(),
+    y: z.number().finite(),
+    width: z.number().finite().positive(),
+    height: z.number().finite().positive(),
+    title: z.string().max(10_000),
+  })
+  .strict()
+
 const edgeSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -65,6 +76,7 @@ export const storedBoardSchema = z
     updatedAt: z.string().datetime(),
     notes: z.array(noteSchema).max(5_000),
     images: z.array(imageSchema).max(2_000),
+    frames: z.array(frameSchema).max(2_000),
     edges: z.array(edgeSchema).max(10_000),
     viewport: viewportSchema,
   })
@@ -78,6 +90,7 @@ const boardContentSchema = z
     title: z.string().min(1).max(200).optional(),
     notes: z.array(noteSchema).max(5_000).optional(),
     images: z.array(imageSchema).max(2_000).optional(),
+    frames: z.array(frameSchema).max(2_000).optional(),
     edges: z.array(edgeSchema).max(10_000).optional(),
     viewport: viewportSchema.optional(),
   })
@@ -117,6 +130,7 @@ export interface BoardSummary {
   updatedAt: string
   noteCount: number
   imageCount: number
+  frameCount: number
   edgeCount: number
 }
 
@@ -135,6 +149,7 @@ export function createEmptyStoredBoard(title = '無題のボード'): StoredBoar
     updatedAt: stamp,
     notes: [],
     images: [],
+    frames: [],
     edges: [],
     viewport: { x: 0, y: 0, zoom: 1 },
   }
@@ -166,6 +181,7 @@ export function createStarterStoredBoard(title = 'はじめてのボード'): St
       },
     ],
     images: [],
+    frames: [],
     edges: [
       {
         id: 'edge-1',
@@ -188,12 +204,20 @@ export function toBoardSummary(board: StoredBoard): BoardSummary {
     updatedAt: board.updatedAt,
     noteCount: board.notes.length,
     imageCount: board.images.length,
+    frameCount: board.frames.length,
     edgeCount: board.edges.length,
   }
 }
 
 export function parseStoredBoard(raw: unknown): StoredBoard {
-  return storedBoardSchema.parse(raw)
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return storedBoardSchema.parse(raw)
+  }
+  const obj = raw as Record<string, unknown>
+  return storedBoardSchema.parse({
+    ...obj,
+    frames: obj.frames ?? [],
+  })
 }
 
 const IMAGE_ID_RE = /^[A-Za-z0-9._-]{1,128}$/

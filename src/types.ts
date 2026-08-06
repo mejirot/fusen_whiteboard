@@ -23,9 +23,16 @@ export type ImageNodeData = {
   height: number
 }
 
+export type FrameNodeData = {
+  title: string
+  width: number
+  height: number
+}
+
 export type StickyNode = Node<StickyNoteData, 'sticky'>
 export type ImageNode = Node<ImageNodeData, 'image'>
-export type BoardNode = StickyNode | ImageNode
+export type FrameNode = Node<FrameNodeData, 'frame'>
+export type BoardNode = StickyNode | ImageNode | FrameNode
 
 export type LabeledEdgeData = {
   label: string
@@ -54,7 +61,7 @@ export type BoardDocumentV1 = {
 }
 
 export type BoardDocument = {
-  version: 2
+  version: 3
   notes: Array<{
     id: string
     x: number
@@ -70,6 +77,14 @@ export type BoardDocument = {
     height: number
     imageId: string
     caption: string
+  }>
+  frames: Array<{
+    id: string
+    x: number
+    y: number
+    width: number
+    height: number
+    title: string
   }>
   edges: Array<{
     id: string
@@ -94,6 +109,7 @@ export type StoredBoard = {
   updatedAt: string
   notes: BoardDocument['notes']
   images: BoardDocument['images']
+  frames: BoardDocument['frames']
   edges: BoardDocument['edges']
   viewport: Viewport
 }
@@ -105,6 +121,7 @@ export type BoardSummary = {
   updatedAt: string
   noteCount: number
   imageCount: number
+  frameCount: number
   edgeCount: number
 }
 
@@ -121,10 +138,23 @@ export const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 }
 export const DEFAULT_IMAGE_MAX = 320
 export const MIN_IMAGE_SIZE = 80
 
+export const DEFAULT_FRAME_WIDTH = 420
+export const DEFAULT_FRAME_HEIGHT = 280
+export const MIN_FRAME_WIDTH = 160
+export const MIN_FRAME_HEIGHT = 120
+export const DEFAULT_FRAME_TITLE = '枠'
+/** Keep frames behind stickies / images. */
+export const FRAME_Z_INDEX = -1
+export const FRAME_DRAG_HANDLE = '.frame-node__title'
+
 export function isStickyNode(node: BoardNode): node is StickyNode {
   return node.type === 'sticky'
 }
 
 export function isImageNode(node: BoardNode): node is ImageNode {
   return node.type === 'image'
+}
+
+export function isFrameNode(node: BoardNode): node is FrameNode {
+  return node.type === 'frame'
 }

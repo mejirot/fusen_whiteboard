@@ -16,14 +16,20 @@ import {
   type MouseEvent,
 } from 'react'
 import { useBoardStore } from '../store/boardStore'
-import { isImageNode, isStickyNode, type BoardNode } from '../types'
+import {
+  isFrameNode,
+  isImageNode,
+  isStickyNode,
+  type BoardNode,
+} from '../types'
 import { BoardLibrary } from './BoardLibrary'
+import { FrameNode } from './FrameNode'
 import { ImageNode } from './ImageNode'
 import { LabeledEdge } from './LabeledEdge'
 import { StickyNoteNode } from './StickyNoteNode'
 import { Toolbar } from './Toolbar'
 
-const nodeTypes = { sticky: StickyNoteNode, image: ImageNode }
+const nodeTypes = { sticky: StickyNoteNode, image: ImageNode, frame: FrameNode }
 const edgeTypes = { labeled: LabeledEdge }
 
 const IMAGE_MIME = /^image\//
@@ -240,6 +246,7 @@ function BoardCanvas() {
             zoomable
             nodeColor={(n) => {
               const node = n as BoardNode
+              if (isFrameNode(node)) return '#b8c0d0'
               if (isImageNode(node)) return '#9aa3b5'
               if (isStickyNode(node)) {
                 switch (node.data.color) {

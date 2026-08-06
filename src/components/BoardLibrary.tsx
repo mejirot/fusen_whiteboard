@@ -90,7 +90,8 @@ export function BoardLibrary() {
                   >
                     <span className="library__item-title">{board.title}</span>
                     <span className="library__item-meta">
-                      付箋 {board.noteCount} / 画像 {board.imageCount}
+                      付箋 {board.noteCount} / 画像 {board.imageCount} / 枠{' '}
+                      {board.frameCount}
                     </span>
                   </button>
                 </li>

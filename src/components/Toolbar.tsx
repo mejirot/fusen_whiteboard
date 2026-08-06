@@ -10,6 +10,7 @@ export function Toolbar() {
   const { screenToFlowPosition } = useReactFlow()
 
   const addNote = useBoardStore((s) => s.addNote)
+  const addFrame = useBoardStore((s) => s.addFrame)
   const setSelectedColor = useBoardStore((s) => s.setSelectedColor)
   const deleteSelected = useBoardStore((s) => s.deleteSelected)
   const undo = useBoardStore((s) => s.undo)
@@ -42,6 +43,17 @@ export function Toolbar() {
       y: center.y - 60,
     })
   }, [addNote, screenToFlowPosition])
+
+  const onAddFrame = useCallback(() => {
+    const center = screenToFlowPosition({
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    })
+    addFrame({
+      x: center.x - 210,
+      y: center.y - 140,
+    })
+  }, [addFrame, screenToFlowPosition])
 
   const onExport = useCallback(() => {
     void (async () => {
@@ -116,6 +128,9 @@ export function Toolbar() {
       <div className="toolbar__group">
         <button type="button" onClick={onAdd} title="付箋を追加 (ダブルクリックでも可)">
           付箋追加
+        </button>
+        <button type="button" onClick={onAddFrame} title="枠を追加">
+          枠追加
         </button>
         <button type="button" onClick={deleteSelected} title="選択を削除 (Delete)">
           削除

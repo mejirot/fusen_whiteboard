@@ -113,6 +113,7 @@ export class BoardWorkspaceStore {
         updatedAt: stamp,
         notes: input.board.notes ?? [],
         images: input.board.images ?? [],
+        frames: input.board.frames ?? [],
         edges: input.board.edges ?? [],
         viewport: input.board.viewport ?? { x: 0, y: 0, zoom: 1 },
       })

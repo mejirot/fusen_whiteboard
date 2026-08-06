@@ -1,14 +1,18 @@
 import {
   DEFAULT_VIEWPORT,
+  FRAME_DRAG_HANDLE,
+  FRAME_Z_INDEX,
   NOTE_COLORS,
   STORAGE_KEY,
   type BoardDocument,
   type BoardNode,
+  type FrameNode,
   type ImageNode,
   type LabeledEdge,
   type NoteColorId,
   type StickyNode,
   type StoredBoard,
+  isFrameNode,
   isImageNode,
   isStickyNode,
 } from '../types'
@@ -65,6 +69,31 @@ function parseImages(raw: unknown): BoardDocument['images'] | null {
     })
   }
   return images
+}
+
+function parseFrames(raw: unknown): BoardDocument['frames'] | null {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) return null
+  const frames: BoardDocument['frames'] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') return null
+    const frame = item as Record<string, unknown>
+    if (typeof frame.id !== 'string') return null
+    if (typeof frame.x !== 'number' || typeof frame.y !== 'number') return null
+    if (typeof frame.width !== 'number' || typeof frame.height !== 'number') {
+      return null
+    }
+    if (typeof frame.title !== 'string') return null
+    frames.push({
+      id: frame.id,
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+      title: frame.title,
+    })
+  }
+  return frames
 }
 
 function parseEdges(raw: unknown): BoardDocument['edges'] | null {
@@ -134,10 +163,20 @@ export function toDocument(
     caption: n.data.caption,
   }))
 
+  const frames = nodes.filter(isFrameNode).map((n: FrameNode) => ({
+    id: n.id,
+    x: n.position.x,
+    y: n.position.y,
+    width: n.data.width,
+    height: n.data.height,
+    title: n.data.title,
+  }))
+
   return {
-    version: 2,
+    version: 3,
     notes,
     images,
+    frames,
     edges: edges.map((e) => ({
       id: e.id,
       source: e.source,
@@ -180,8 +219,26 @@ export function fromDocument(doc: BoardDocument | StoredBoard): {
     },
   }))
 
+  const frameList = 'frames' in doc && Array.isArray(doc.frames) ? doc.frames : []
+  const frameNodes: FrameNode[] = frameList.map((frame) => ({
+    id: frame.id,
+    type: 'frame' as const,
+    position: { x: frame.x, y: frame.y },
+    style: { width: frame.width, height: frame.height },
+    width: frame.width,
+    height: frame.height,
+    zIndex: FRAME_Z_INDEX,
+    connectable: false,
+    dragHandle: FRAME_DRAG_HANDLE,
+    data: {
+      title: frame.title,
+      width: frame.width,
+      height: frame.height,
+    },
+  }))
+
   return {
-    nodes: [...stickyNodes, ...imageNodes],
+    nodes: [...frameNodes, ...stickyNodes, ...imageNodes],
     edges: doc.edges.map((e) => ({
       id: e.id,
       type: 'labeled' as const,
@@ -199,13 +256,17 @@ export function fromDocument(doc: BoardDocument | StoredBoard): {
 export function parseDocument(raw: unknown): BoardDocument | null {
   if (!raw || typeof raw !== 'object') return null
   const obj = raw as Record<string, unknown>
-  if (obj.version !== 1 && obj.version !== 2) return null
+  if (obj.version !== 1 && obj.version !== 2 && obj.version !== 3) return null
 
   const notes = parseNotes(obj.notes)
   if (!notes) return null
 
   const images = obj.version === 1 ? [] : parseImages(obj.images)
   if (!images) return null
+
+  const frames =
+    obj.version === 1 || obj.version === 2 ? [] : parseFrames(obj.frames)
+  if (!frames) return null
 
   const edges = parseEdges(obj.edges)
   if (!edges) return null
@@ -214,9 +275,10 @@ export function parseDocument(raw: unknown): BoardDocument | null {
   const assets = parseAssets(obj.assets)
 
   return {
-    version: 2,
+    version: 3,
     notes,
     images,
+    frames,
     edges,
     viewport,
     ...(assets ? { assets } : {}),
@@ -246,13 +308,20 @@ export function clearLocalStorageDocument(): void {
 
 export function boardContentFromDocument(doc: BoardDocument): Pick<
   StoredBoard,
-  'schemaVersion' | 'title' | 'notes' | 'images' | 'edges' | 'viewport'
+  | 'schemaVersion'
+  | 'title'
+  | 'notes'
+  | 'images'
+  | 'frames'
+  | 'edges'
+  | 'viewport'
 > {
   return {
     schemaVersion: 1,
     title: '移行したボード',
     notes: doc.notes,
     images: doc.images,
+    frames: doc.frames,
     edges: doc.edges,
     viewport: doc.viewport,
   }
@@ -270,6 +339,7 @@ export function toStoredBoardPayload(
     title,
     notes: doc.notes,
     images: doc.images,
+    frames: doc.frames,
     edges: doc.edges,
     viewport: doc.viewport,
   }
@@ -313,9 +383,10 @@ export function downloadJson(
 
 export function createEmptyDocument(): BoardDocument {
   return {
-    version: 2,
+    version: 3,
     notes: [],
     images: [],
+    frames: [],
     edges: [],
     viewport: { ...DEFAULT_VIEWPORT },
   }
@@ -323,7 +394,7 @@ export function createEmptyDocument(): BoardDocument {
 
 export function createStarterDocument(): BoardDocument {
   return {
-    version: 2,
+    version: 3,
     notes: [
       {
         id: 'note-1',
@@ -341,6 +412,7 @@ export function createStarterDocument(): BoardDocument {
       },
     ],
     images: [],
+    frames: [],
     edges: [
       {
         id: 'edge-1',

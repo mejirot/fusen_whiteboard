@@ -43,16 +43,23 @@ import {
 } from '../persistence/storage'
 import {
   ACTIVE_BOARD_KEY,
+  DEFAULT_FRAME_HEIGHT,
+  DEFAULT_FRAME_TITLE,
+  DEFAULT_FRAME_WIDTH,
   DEFAULT_VIEWPORT,
+  FRAME_DRAG_HANDLE,
+  FRAME_Z_INDEX,
   type BoardDocument,
   type BoardNode,
   type BoardSnapshot,
   type BoardSummary,
+  type FrameNode,
   type ImageNode,
   type LabeledEdge,
   type NoteColorId,
   type StickyNode,
   type StoredBoard,
+  isFrameNode,
   isImageNode,
   isStickyNode,
 } from '../types'
@@ -138,6 +145,10 @@ type BoardState = {
   onConnect: (connection: Connection) => void
 
   addNote: (position: XYPosition, color?: NoteColorId) => void
+  addFrame: (
+    position: XYPosition,
+    size?: { width: number; height: number },
+  ) => void
   addImageFromBlob: (
     blob: Blob,
     position: XYPosition,
@@ -147,6 +158,8 @@ type BoardState = {
   updateNoteText: (id: string, text: string, withHistory: boolean) => void
   updateImageCaption: (id: string, caption: string, withHistory: boolean) => void
   updateImageSize: (id: string, width: number, height: number) => void
+  updateFrameTitle: (id: string, title: string, withHistory: boolean) => void
+  updateFrameSize: (id: string, width: number, height: number) => void
   setSelectedColor: (color: NoteColorId) => void
   updateEdgeLabel: (id: string, label: string, withHistory: boolean) => void
   deleteSelected: () => void
@@ -269,19 +282,29 @@ export const useBoardStore = create<BoardState>((set, get) => {
     return created
   }
 
-  const syncImageDimensions = (nodes: BoardNode[]): BoardNode[] =>
+  const syncSizedNodeDimensions = (nodes: BoardNode[]): BoardNode[] =>
     nodes.map((n) => {
-      if (!isImageNode(n)) return n
-      const width = n.width ?? n.data.width
-      const height = n.height ?? n.data.height
-      if (width === n.data.width && height === n.data.height) {
-        return n
+      if (isImageNode(n)) {
+        const width = n.width ?? n.data.width
+        const height = n.height ?? n.data.height
+        if (width === n.data.width && height === n.data.height) return n
+        return {
+          ...n,
+          style: { ...n.style, width, height },
+          data: { ...n.data, width, height },
+        }
       }
-      return {
-        ...n,
-        style: { ...n.style, width, height },
-        data: { ...n.data, width, height },
+      if (isFrameNode(n)) {
+        const width = n.width ?? n.data.width
+        const height = n.height ?? n.data.height
+        if (width === n.data.width && height === n.data.height) return n
+        return {
+          ...n,
+          style: { ...n.style, width, height },
+          data: { ...n.data, width, height },
+        }
       }
+      return n
     })
 
   return {
@@ -458,7 +481,9 @@ export const useBoardStore = create<BoardState>((set, get) => {
         (c) => c.type === 'remove' || c.type === 'add',
       )
       if (structural) get().commit()
-      const next = syncImageDimensions(applyNodeChanges(changes, get().nodes))
+      const next = syncSizedNodeDimensions(
+        applyNodeChanges(changes, get().nodes),
+      )
       set({ nodes: next })
       scheduleAutosave()
     },
@@ -499,6 +524,31 @@ export const useBoardStore = create<BoardState>((set, get) => {
         data: { text: '', color },
       }
       set({ nodes: [...get().nodes, node] })
+      scheduleAutosave()
+    },
+
+    addFrame: (position, size) => {
+      get().commit()
+      const width = size?.width ?? DEFAULT_FRAME_WIDTH
+      const height = size?.height ?? DEFAULT_FRAME_HEIGHT
+      const node: FrameNode = {
+        id: uid('frame'),
+        type: 'frame',
+        position,
+        style: { width, height },
+        width,
+        height,
+        zIndex: FRAME_Z_INDEX,
+        connectable: false,
+        dragHandle: FRAME_DRAG_HANDLE,
+        data: {
+          title: DEFAULT_FRAME_TITLE,
+          width,
+          height,
+        },
+      }
+      // Keep frames under other nodes in paint order as well as zIndex.
+      set({ nodes: [node, ...get().nodes] })
       scheduleAutosave()
     },
 
@@ -572,6 +622,40 @@ export const useBoardStore = create<BoardState>((set, get) => {
       set({
         nodes: get().nodes.map((n) =>
           n.id === id && isImageNode(n)
+            ? {
+                ...n,
+                width,
+                height,
+                style: { ...n.style, width, height },
+                data: { ...n.data, width, height },
+              }
+            : n,
+        ),
+      })
+      scheduleAutosave()
+    },
+
+    updateFrameTitle: (id, title, withHistory) => {
+      const node = get().nodes.find((n) => n.id === id)
+      if (!node || !isFrameNode(node) || node.data.title === title) return
+      if (withHistory) get().commit()
+      set({
+        nodes: get().nodes.map((n) =>
+          n.id === id && isFrameNode(n)
+            ? { ...n, data: { ...n.data, title } }
+            : n,
+        ),
+      })
+      scheduleAutosave()
+    },
+
+    updateFrameSize: (id, width, height) => {
+      const node = get().nodes.find((n) => n.id === id)
+      if (!node || !isFrameNode(node)) return
+      if (node.data.width === width && node.data.height === height) return
+      set({
+        nodes: get().nodes.map((n) =>
+          n.id === id && isFrameNode(n)
             ? {
                 ...n,
                 width,
