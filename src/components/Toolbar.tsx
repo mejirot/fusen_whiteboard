@@ -189,7 +189,7 @@ export function Toolbar() {
       )}
 
       <p className="toolbar__hint">
-        画像は Ctrl+V またはドロップ / キャプションはダブルクリック / 空白ドラッグで選択 /
+        画像は Ctrl+V / キャプションはダブルクリック / 空白ドラッグで選択 /
         中ボタンドラッグでパン
       </p>
     </header>
