@@ -16,6 +16,7 @@ const noteSchema = z
     x: z.number().finite(),
     y: z.number().finite(),
     text: z.string().max(100_000),
+    detail: z.string().max(100_000).default(''),
     color: z.enum(NOTE_COLOR_IDS),
   })
   .strict()
@@ -170,6 +171,7 @@ export function createStarterStoredBoard(title = 'はじめてのボード'): St
         x: 120,
         y: 140,
         text: 'ダブルクリックで編集',
+        detail: '',
         color: 'yellow',
       },
       {
@@ -177,6 +179,7 @@ export function createStarterStoredBoard(title = 'はじめてのボード'): St
         x: 420,
         y: 220,
         text: 'ハンドルからドラッグして矢印',
+        detail: '',
         color: 'mint',
       },
     ],

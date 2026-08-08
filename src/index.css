@@ -57,8 +57,15 @@ button:disabled {
   height: 100%;
 }
 
+.board__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .board__canvas {
   flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -357,6 +364,17 @@ button:disabled {
   outline-offset: 2px;
 }
 
+.sticky-note__detail-mark {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: rgba(31, 36, 48, 0.45);
+  pointer-events: none;
+  user-select: none;
+}
+
 .sticky-note__text {
   white-space: pre-wrap;
   word-break: break-word;
@@ -379,6 +397,67 @@ button:disabled {
   font: inherit;
   color: inherit;
   padding: 0;
+}
+
+.note-detail-panel {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  flex-shrink: 0;
+  padding: 0.85rem 0.9rem;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  z-index: 4;
+  gap: 0.4rem;
+}
+
+.note-detail-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.note-detail-panel__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.note-detail-panel__close {
+  padding: 0.15rem 0.45rem;
+  line-height: 1.2;
+}
+
+.note-detail-panel__label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.note-detail-panel__text,
+.note-detail-panel__detail {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  color: inherit;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.note-detail-panel__detail {
+  flex: 1;
+  min-height: 10rem;
+  resize: none;
+}
+
+.note-detail-panel__text:focus,
+.note-detail-panel__detail:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+  border-color: var(--accent);
 }
 
 .image-node {

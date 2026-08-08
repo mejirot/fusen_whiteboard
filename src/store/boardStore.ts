@@ -156,11 +156,13 @@ type BoardState = {
   ) => Promise<boolean>
   nextPasteCaption: () => string
   updateNoteText: (id: string, text: string, withHistory: boolean) => void
+  updateNoteDetail: (id: string, detail: string, withHistory: boolean) => void
   updateImageCaption: (id: string, caption: string, withHistory: boolean) => void
   updateImageSize: (id: string, width: number, height: number) => void
   updateFrameTitle: (id: string, title: string, withHistory: boolean) => void
   updateFrameSize: (id: string, width: number, height: number) => void
   setSelectedColor: (color: NoteColorId) => void
+  clearSelection: () => void
   updateEdgeLabel: (id: string, label: string, withHistory: boolean) => void
   deleteSelected: () => void
 
@@ -521,7 +523,7 @@ export const useBoardStore = create<BoardState>((set, get) => {
         id: uid('note'),
         type: 'sticky',
         position,
-        data: { text: '', color },
+        data: { text: '', detail: '', color },
       }
       set({ nodes: [...get().nodes, node] })
       scheduleAutosave()
@@ -595,6 +597,20 @@ export const useBoardStore = create<BoardState>((set, get) => {
         nodes: get().nodes.map((n) =>
           n.id === id && isStickyNode(n)
             ? { ...n, data: { ...n.data, text } }
+            : n,
+        ),
+      })
+      scheduleAutosave()
+    },
+
+    updateNoteDetail: (id, detail, withHistory) => {
+      const node = get().nodes.find((n) => n.id === id)
+      if (!node || !isStickyNode(node) || node.data.detail === detail) return
+      if (withHistory) get().commit()
+      set({
+        nodes: get().nodes.map((n) =>
+          n.id === id && isStickyNode(n)
+            ? { ...n, data: { ...n.data, detail } }
             : n,
         ),
       })
@@ -684,6 +700,21 @@ export const useBoardStore = create<BoardState>((set, get) => {
         ),
       })
       scheduleAutosave()
+    },
+
+    clearSelection: () => {
+      const { nodes, edges } = get()
+      const hasSelectedNode = nodes.some((n) => n.selected)
+      const hasSelectedEdge = edges.some((e) => e.selected)
+      if (!hasSelectedNode && !hasSelectedEdge) return
+      set({
+        nodes: hasSelectedNode
+          ? nodes.map((n) => (n.selected ? { ...n, selected: false } : n))
+          : nodes,
+        edges: hasSelectedEdge
+          ? edges.map((e) => (e.selected ? { ...e, selected: false } : e))
+          : edges,
+      })
     },
 
     updateEdgeLabel: (id, label, withHistory) => {

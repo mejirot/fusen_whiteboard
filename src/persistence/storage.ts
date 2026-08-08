@@ -38,6 +38,7 @@ function parseNotes(raw: unknown): BoardDocument['notes'] | null {
       x: n.x,
       y: n.y,
       text: n.text,
+      detail: typeof n.detail === 'string' ? n.detail : '',
       color: isNoteColor(n.color) ? n.color : 'yellow',
     })
   }
@@ -150,6 +151,7 @@ export function toDocument(
     x: n.position.x,
     y: n.position.y,
     text: n.data.text,
+    detail: n.data.detail,
     color: n.data.color,
   }))
 
@@ -200,6 +202,7 @@ export function fromDocument(doc: BoardDocument | StoredBoard): {
     position: { x: n.x, y: n.y },
     data: {
       text: n.text,
+      detail: n.detail ?? '',
       color: isNoteColor(n.color) ? n.color : 'yellow',
     },
   }))
@@ -401,6 +404,7 @@ export function createStarterDocument(): BoardDocument {
         x: 120,
         y: 140,
         text: 'ダブルクリックで編集',
+        detail: '',
         color: 'yellow',
       },
       {
@@ -408,6 +412,7 @@ export function createStarterDocument(): BoardDocument {
         x: 420,
         y: 220,
         text: 'ハンドルからドラッグして矢印',
+        detail: '',
         color: 'mint',
       },
     ],

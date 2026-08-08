@@ -13,6 +13,8 @@ export type NoteColorId = (typeof NOTE_COLORS)[number]['id']
 
 export type StickyNoteData = {
   text: string
+  /** Longer plain-text notes; not shown on the canvas sticky. */
+  detail: string
   color: NoteColorId
 }
 
@@ -47,6 +49,7 @@ export type BoardDocumentV1 = {
     x: number
     y: number
     text: string
+    detail?: string
     color: NoteColorId
   }>
   edges: Array<{
@@ -67,6 +70,7 @@ export type BoardDocument = {
     x: number
     y: number
     text: string
+    detail: string
     color: NoteColorId
   }>
   images: Array<{

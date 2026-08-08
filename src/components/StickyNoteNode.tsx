@@ -23,12 +23,13 @@ function StickyNoteNodeComponent({
   data,
   selected,
 }: NodeProps<StickyNoteNodeType>) {
-  const { text, color } = data
+  const { text, detail = '', color } = data
   const updateNoteText = useBoardStore((s) => s.updateNoteText)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(text)
   const baselineRef = useRef(text)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const hasDetail = detail.trim().length > 0
 
   useEffect(() => {
     if (!editing) setDraft(text)
@@ -80,6 +81,16 @@ function StickyNoteNodeComponent({
       <Handle type="source" position={Position.Right} id="right" />
       <Handle type="source" position={Position.Top} id="top" />
       <Handle type="source" position={Position.Bottom} id="bottom" />
+
+      {hasDetail ? (
+        <span
+          className="sticky-note__detail-mark"
+          title="詳細あり"
+          aria-label="詳細あり"
+        >
+          ▤
+        </span>
+      ) : null}
 
       {editing ? (
         <textarea

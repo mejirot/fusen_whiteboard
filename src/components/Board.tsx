@@ -26,6 +26,7 @@ import { BoardLibrary } from './BoardLibrary'
 import { FrameNode } from './FrameNode'
 import { ImageNode } from './ImageNode'
 import { LabeledEdge } from './LabeledEdge'
+import { NoteDetailPanel } from './NoteDetailPanel'
 import { StickyNoteNode } from './StickyNoteNode'
 import { Toolbar } from './Toolbar'
 
@@ -207,67 +208,70 @@ function BoardCanvas() {
   return (
     <div className="board">
       <Toolbar />
-      <div className="board__canvas" onDragOver={onDragOver} onDrop={onDrop}>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          defaultEdgeOptions={defaultEdgeOptions}
-          connectionMode={ConnectionMode.Loose}
-          defaultViewport={initialViewport}
-          fitView={false}
-          minZoom={0.2}
-          maxZoom={2.5}
-          panOnScroll={false}
-          zoomOnScroll
-          panOnDrag={[1, 2]}
-          selectionOnDrag
-          selectionMode={SelectionMode.Partial}
-          multiSelectionKeyCode="Shift"
-          deleteKeyCode={null}
-          onlyRenderVisibleElements
-          onPaneClick={onPaneClick}
-          zoomOnDoubleClick={false}
-          onNodeDragStart={captureBeforeDrag}
-          onNodeDragStop={commitAfterDrag}
-          onSelectionDragStart={captureBeforeDrag}
-          onSelectionDragStop={commitAfterDrag}
-          onMoveEnd={(_, next) => setViewport(next)}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background gap={20} size={1} color="#d0d4dc" />
-          <Controls showInteractive={false} />
-          <MiniMap
-            pannable
-            zoomable
-            nodeColor={(n) => {
-              const node = n as BoardNode
-              if (isFrameNode(node)) return '#b8c0d0'
-              if (isImageNode(node)) return '#9aa3b5'
-              if (isStickyNode(node)) {
-                switch (node.data.color) {
-                  case 'peach':
-                    return '#FFD4C2'
-                  case 'mint':
-                    return '#C8F0D8'
-                  case 'sky':
-                    return '#CDE8FF'
-                  case 'lavender':
-                    return '#E4D4FF'
-                  case 'rose':
-                    return '#FFD0D8'
-                  default:
-                    return '#FFE566'
+      <div className="board__body">
+        <div className="board__canvas" onDragOver={onDragOver} onDrop={onDrop}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            defaultEdgeOptions={defaultEdgeOptions}
+            connectionMode={ConnectionMode.Loose}
+            defaultViewport={initialViewport}
+            fitView={false}
+            minZoom={0.2}
+            maxZoom={2.5}
+            panOnScroll={false}
+            zoomOnScroll
+            panOnDrag={[1, 2]}
+            selectionOnDrag
+            selectionMode={SelectionMode.Partial}
+            multiSelectionKeyCode="Shift"
+            deleteKeyCode={null}
+            onlyRenderVisibleElements
+            onPaneClick={onPaneClick}
+            zoomOnDoubleClick={false}
+            onNodeDragStart={captureBeforeDrag}
+            onNodeDragStop={commitAfterDrag}
+            onSelectionDragStart={captureBeforeDrag}
+            onSelectionDragStop={commitAfterDrag}
+            onMoveEnd={(_, next) => setViewport(next)}
+            proOptions={{ hideAttribution: true }}
+          >
+            <Background gap={20} size={1} color="#d0d4dc" />
+            <Controls showInteractive={false} />
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor={(n) => {
+                const node = n as BoardNode
+                if (isFrameNode(node)) return '#b8c0d0'
+                if (isImageNode(node)) return '#9aa3b5'
+                if (isStickyNode(node)) {
+                  switch (node.data.color) {
+                    case 'peach':
+                      return '#FFD4C2'
+                    case 'mint':
+                      return '#C8F0D8'
+                    case 'sky':
+                      return '#CDE8FF'
+                    case 'lavender':
+                      return '#E4D4FF'
+                    case 'rose':
+                      return '#FFD0D8'
+                    default:
+                      return '#FFE566'
+                  }
                 }
-              }
-              return '#FFE566'
-            }}
-          />
-        </ReactFlow>
+                return '#FFE566'
+              }}
+            />
+          </ReactFlow>
+        </div>
+        <NoteDetailPanel />
       </div>
     </div>
   )
